@@ -39,7 +39,7 @@ class AuthController {
   refresh = catchAsync(async (req, res, next) => {
     const refreshToken = req.cookies.jwt;
     const authData = await AuthService.refreshAccessToken(refreshToken);
-    // Refresh only mints access token in our current logic
+    // Only return new access token — cookie stays untouched (no rotation)
     res.status(200).json({
       status: 'success',
       accessToken: authData.accessToken,
@@ -51,9 +51,12 @@ class AuthController {
     const refreshToken = req.cookies.jwt;
     await AuthService.logout(req.user, refreshToken);
     
-    res.cookie('jwt', 'loggedout', {
-      expires: new Date(Date.now() + 10 * 1000),
-      httpOnly: true
+    // Instantly expire the cookie — do not leave a 10-second window
+    res.cookie('jwt', '', {
+      expires: new Date(0),
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
     });
     res.status(200).json({ status: 'success' });
   });

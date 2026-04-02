@@ -19,28 +19,24 @@ const app = express();
 connectDB();
 
 // Global Middleware
-const allowedOrigins = process.env.CLIENT_URL ? [process.env.CLIENT_URL] : ['http://localhost:5173'];
+const clientUrl = (process.env.CLIENT_URL || 'http://localhost:5173').trim();
 
 app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+  origin: clientUrl, // Strictly locks down connections to the exact frontend origin
   credentials: true
 }));
 
-app.use(helmet()); // Set security HTTP headers
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+})); // Set security HTTP headers inline with CORS
 app.use(express.json({ limit: '10kb' })); // Body parser, reading data from body into req.body
 app.use(cookieParser()); // Parse cookies attached to the client request object
 app.use(morgan('dev')); // Development logging
 
-// Rate limiting
+// General API rate limiting
 const limiter = rateLimit({
-  max: 100, // Limit each IP to 100 requests per windowMs
-  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 100,
+  windowMs: 60 * 60 * 1000,
   message: 'Too many requests from this IP, please try again in an hour!'
 });
 app.use('/api', limiter);

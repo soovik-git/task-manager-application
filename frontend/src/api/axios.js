@@ -25,32 +25,76 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response Interceptor: Handle 401s and Refresh Token
+// In-memory Mutex Lock variables
+let isRefreshing = false;
+let refreshSubscribers = [];
+
+const subscribeTokenRefresh = (cb) => {
+  refreshSubscribers.push(cb);
+};
+
+const onRefreshed = (accessToken) => {
+  refreshSubscribers.forEach((cb) => cb(accessToken));
+};
+
+const onRefreshFailed = (error) => {
+  refreshSubscribers.forEach((cb) => cb(error));
+};
+
+// Response Interceptor: Handle 401s and Refresh Token Queue
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
 
-    // If error is 401 and we haven't already retried
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    if (
+      error.response?.status === 401 && 
+      !originalRequest._retry && 
+      !originalRequest.url.includes('/auth/refresh')
+    ) {
       originalRequest._retry = true;
 
-      try {
-        // Attempt to refresh the token using the http-only cookie
-        const res = await api.get('/auth/refresh');
-        
-        // Grab the new access token
-        const newAccessToken = res.data.accessToken;
-        setAccessToken(newAccessToken);
+      if (!isRefreshing) {
+        isRefreshing = true;
 
-        // Update the header of the original request and retry
-        originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
-        return api(originalRequest);
-      } catch (refreshError) {
-        // Refresh token is expired or invalid. 
-        // We will clear state in AuthContext via an event or the context will catch it
-        setAccessToken(null);
-        return Promise.reject(refreshError);
+        try {
+          const res = await api.get('/auth/refresh');
+          const newAccessToken = res.data.accessToken;
+          
+          setAccessToken(newAccessToken);
+          originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
+          
+          // Allow all held parallel requests to fire again using the new token
+          onRefreshed(newAccessToken);
+          refreshSubscribers = [];
+          
+          return api(originalRequest);
+        } catch (refreshError) {
+          // If refresh completely fails, clear everything and reject all queued requests
+          setAccessToken(null);
+          localStorage.removeItem('isLoggedIn');
+          localStorage.removeItem('user'); // ← Critical: prevents stale user causing reload flicker
+          
+          onRefreshFailed(refreshError);
+          refreshSubscribers = [];
+          
+          return Promise.reject(refreshError);
+        } finally {
+          isRefreshing = false;
+        }
+      } else {
+        // If a refresh is already in progress, suspend this request into the holding queue
+        return new Promise((resolve, reject) => {
+          subscribeTokenRefresh((tokenOrError) => {
+            if (typeof tokenOrError === 'string') {
+               originalRequest.headers.Authorization = `Bearer ${tokenOrError}`;
+               resolve(api(originalRequest));
+            } else {
+               // Reject hanging requests
+               reject(tokenOrError); 
+            }
+          });
+        });
       }
     }
 

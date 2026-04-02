@@ -22,6 +22,12 @@ class AuthService {
     // Save refresh token in DB
     user.refreshTokens = user.refreshTokens || [];
     user.refreshTokens.push(refreshToken);
+
+    // Enforce rigorous max-session limit
+    if (user.refreshTokens.length > 5) {
+      user.refreshTokens = user.refreshTokens.slice(-5);
+    }
+
     await user.save({ validateBeforeSave: false });
 
     // Remove sensitive data before returning
@@ -57,21 +63,26 @@ class AuthService {
   async refreshAccessToken(token) {
     if (!token) throw new AppError('No refresh token provided', 401);
 
-    // Verify token
-    const decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET || 'fallback_refresh_secret');
-    
-    // Check if user exists and has this refresh token
-    const user = await UserRepository.findById(decoded.id);
-    if (!user || !user.refreshTokens.includes(token)) {
-      throw new AppError('Invalid refresh token', 401);
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_REFRESH_SECRET || 'fallback_refresh_secret');
+    } catch (err) {
+      throw new AppError('Invalid or expired refresh token', 401);
     }
 
-    // Generate fresh tokens using the single source of truth route 
-    // Usually a refresh regenerates a refresh token as well for rotation, but we can just generate a new access token
-    // For simplicity, we just generate an access token, or use generateAuthData to rotate. Let's rely on standard rotation.
-    
+    // Verify token exists in DB — this allows revocation on logout
+    const user = await UserRepository.findById(decoded.id);
+    if (!user || !user.refreshTokens || !user.refreshTokens.includes(token)) {
+      throw new AppError('Refresh token has been revoked. Please log in again.', 401);
+    }
+
+    // Issue a fresh short-lived access token only.
+    // We do NOT rotate the refresh token here — doing so causes race conditions
+    // when the user reloads rapidly (both requests arrive with the same cookie
+    // before the browser receives the new Set-Cookie from the first response).
     const accessToken = this.generateAccessToken(user._id);
-    // Remove sensitive data
+
+    // Strip sensitive fields before returning
     user.password = undefined;
     user.refreshTokens = undefined;
 

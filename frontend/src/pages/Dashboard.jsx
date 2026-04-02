@@ -8,6 +8,7 @@ import Pagination from '../components/Pagination';
 const Dashboard = () => {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   
   // Pagination & Search State
   const [page, setPage] = useState(1);
@@ -42,16 +43,14 @@ const Dashboard = () => {
   const handleSaveTask = async (taskData, id) => {
     try {
       if (id) {
-        // Update
         await api.patch(`/tasks/${id}`, taskData);
       } else {
-        // Create
         await api.post('/tasks', taskData);
       }
       setIsModalOpen(false);
       fetchTasks();
     } catch (err) {
-      alert(err.response?.data?.message || 'Error saving task');
+      setError(err.response?.data?.message || 'Error saving task');
     }
   };
 
@@ -60,19 +59,18 @@ const Dashboard = () => {
       await api.delete(`/tasks/${id}`);
       fetchTasks();
     } catch (err) {
-      alert('Failed to delete task');
+      setError('Failed to delete task');
     }
   };
 
   const handleStatusChange = async (id, status) => {
     try {
-      // Optimistic update
-      setTasks(tasks.map(t => t.id === id ? { ...t, status } : t));
+      // #12 Fix: use _id (real DB field) not id (virtual) for reliable optimistic update
+      setTasks(tasks.map(t => (t._id === id || t.id === id) ? { ...t, status } : t));
       await api.patch(`/tasks/${id}`, { status });
     } catch (err) {
-      // Revert on fail
       fetchTasks();
-      alert('Failed to update status');
+      setError('Failed to update status');
     }
   };
 
@@ -91,6 +89,17 @@ const Dashboard = () => {
       <Navbar />
       
       <div className="container">
+        {error && (
+          <div style={{
+            background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
+            borderRadius: 'var(--border-radius-sm)', padding: '0.75rem 1rem',
+            color: 'var(--color-danger)', marginBottom: '1rem',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+          }}>
+            {error}
+            <button onClick={() => setError(null)} style={{ background: 'none', color: 'inherit', padding: '0', fontSize: '1rem' }}>✕</button>
+          </div>
+        )}
         <div className="dashboard-header">
           <input 
             type="text" 

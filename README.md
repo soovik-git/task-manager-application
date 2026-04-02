@@ -11,8 +11,8 @@ The system is rigorously partitioned to maintain the Single Responsibility Princ
 ### Backend Logic (Node.js + Express + MongoDB)
 The backend completely avoids "Spaghetti Code" by strictly routing HTTP requests through five separate architectural namespaces:
 1. **Routes**: Maps string endpoints to specific Controller functions.
-2. **Controllers**: Purely handles the *HTTP Transport Layer*. It strips data from headers/bodies, sets cookies, and formats final JSON responses.
-3. **Services**: Contains zero knowledge of HTTP or Express. It solely handles *Business Logic* (e.g., verifying user credentials, hashing passwords).
+2. **Controllers**: Handles the *HTTP Transport Layer*. It strips data from headers/bodies, sets cookies, and formats final JSON responses.
+3. **Services**: Handles *Business Logic* (e.g., verifying user credentials, hashing passwords).
 4. **Repositories**: The active *Data Access Layer*. Responsible for standardizing direct reads/writes to MongoDB, keeping Mongoose schemas out of the Services layer.
 5. **Validations**: All endpoints pass through `Joi` interceptors that strictly analyze schema types before the Controller is ever invoked.
 
@@ -41,7 +41,7 @@ npm install
 
 Ensure your `.env` file is properly configured inside the `backend/` directory:
 ```env
-PORT=5000
+PORT=3000
 MONGODB_URI=YOUR_MONGO_DB_URL_HERE
 JWT_SECRET=super_secret_dev_key
 JWT_REFRESH_SECRET=super_secret_refresh_key

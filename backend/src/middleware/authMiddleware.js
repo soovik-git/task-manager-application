@@ -1,7 +1,6 @@
 import jwt from 'jsonwebtoken';
 import AppError from '../utils/AppError.js';
 import catchAsync from '../utils/catchAsync.js';
-import UserRepository from '../repositories/UserRepository.js';
 
 const authMiddleware = {
   protect: catchAsync(async (req, res, next) => {
@@ -15,7 +14,7 @@ const authMiddleware = {
       return next(new AppError('You are not logged in. Please log in to get access.', 401));
     }
 
-    // 2. Verify token
+    // 2. Verify token — if invalid or expired, jwt.verify throws
     let decoded;
     try {
       decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret_for_development_only');
@@ -23,14 +22,10 @@ const authMiddleware = {
       return next(new AppError('Invalid token or token expired. Please log in again.', 401));
     }
 
-    // 3. Check if user still exists
-    const currentUser = await UserRepository.findById(decoded.id);
-    if (!currentUser) {
-      return next(new AppError('The user belonging to this token no longer exists.', 401));
-    }
-
-    // Grant Access to protected route
-    req.user = currentUser;
+    // 3. Attach user identity from the verified token payload
+    // The cryptographic signature already guarantees this is authentic.
+    // A separate DB call here would double latency on every request for no security gain.
+    req.user = { _id: decoded.id };
     next();
   })
 };

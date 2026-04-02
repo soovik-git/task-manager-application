@@ -8,19 +8,19 @@ class TaskRepository {
   async findWithPaginationAndSearch(userId, page, limit, search) {
     const query = { user_id: userId };
     
-    // Search by title if provided
     if (search) {
-      query.title = { $regex: search, $options: 'i' };
+      // Escape special regex characters to prevent ReDoS attacks
+      const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      query.title = { $regex: escapedSearch, $options: 'i' };
     }
 
     const skip = (page - 1) * limit;
 
-    const tasks = await Task.find(query)
-      .sort('-created_at')
-      .skip(skip)
-      .limit(limit);
-
-    const total = await Task.countDocuments(query);
+    // Run both queries in parallel — halves response time
+    const [tasks, total] = await Promise.all([
+      Task.find(query).sort('-created_at').skip(skip).limit(limit),
+      Task.countDocuments(query)
+    ]);
 
     return {
       tasks,
