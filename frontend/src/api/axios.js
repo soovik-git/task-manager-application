@@ -2,7 +2,7 @@ import axios from 'axios';
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000/api',
-  withCredentials: true, // Allows sending HTTP-only cookies (refresh token)
+  withCredentials: true, // 🔥 REQUIRED
   headers: {
     'Content-Type': 'application/json',
   },
@@ -14,18 +14,15 @@ export const setAccessToken = (token) => {
   accessToken = token;
 };
 
-// Request Interceptor: Attach Access Token to every request
-api.interceptors.request.use(
-  (config) => {
-    if (accessToken) {
-      config.headers.Authorization = `Bearer ${accessToken}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
+// Attach access token
+api.interceptors.request.use((config) => {
+  if (accessToken) {
+    config.headers.Authorization = `Bearer ${accessToken}`;
+  }
+  return config;
+});
 
-// In-memory Mutex Lock variables
+// Mutex lock
 let isRefreshing = false;
 let refreshSubscribers = [];
 
@@ -33,23 +30,22 @@ const subscribeTokenRefresh = (cb) => {
   refreshSubscribers.push(cb);
 };
 
-const onRefreshed = (accessToken) => {
-  refreshSubscribers.forEach((cb) => cb(accessToken));
+const onRefreshed = (token) => {
+  refreshSubscribers.forEach((cb) => cb(token));
 };
 
-const onRefreshFailed = (error) => {
-  refreshSubscribers.forEach((cb) => cb(error));
+const onRefreshFailed = (err) => {
+  refreshSubscribers.forEach((cb) => cb(err));
 };
 
-// Response Interceptor: Handle 401s and Refresh Token Queue
 api.interceptors.response.use(
-  (response) => response,
+  (res) => res,
   async (error) => {
     const originalRequest = error.config;
 
     if (
-      error.response?.status === 401 && 
-      !originalRequest._retry && 
+      error.response?.status === 401 &&
+      !originalRequest._retry &&
       !originalRequest.url.includes('/auth/refresh')
     ) {
       originalRequest._retry = true;
@@ -59,51 +55,38 @@ api.interceptors.response.use(
 
         try {
           const res = await api.get('/auth/refresh');
-          const newAccessToken = res.data.accessToken;
-          
-          setAccessToken(newAccessToken);
-          originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
-          
-          // Allow all held parallel requests to fire again using the new token
-          onRefreshed(newAccessToken);
+          const newToken = res.data.accessToken;
+
+          setAccessToken(newToken);
+          onRefreshed(newToken);
           refreshSubscribers = [];
-          
+
+          originalRequest.headers.Authorization = `Bearer ${newToken}`;
           return api(originalRequest);
-        } catch (refreshError) {
-          // WHY CLEAR THE QUEUE BEFORE REDIRECTING?
-          // If we redirect while subscribers are still waiting on a Promise,
-          // those Promises never resolve or reject — the callbacks hang in memory
-          // and the app visually freezes (spinners stuck, buttons unresponsive).
-          // Rejecting all queued requests FIRST ensures every caller gets a clean
-          // rejection it can handle, then we navigate away safely.
+        } catch (err) {
           setAccessToken(null);
-          localStorage.removeItem('isLoggedIn');
-          localStorage.removeItem('user');
+          localStorage.clear();
 
-          onRefreshFailed(refreshError); // Reject all queued requests
-          refreshSubscribers = [];       // Clear the queue
+          onRefreshFailed(err);
+          refreshSubscribers = [];
 
-          // Hard redirect to login — session is unrecoverable at this point
           window.location.href = '/login';
-
-          return Promise.reject(refreshError);
+          return Promise.reject(err);
         } finally {
           isRefreshing = false;
         }
-      } else {
-        // If a refresh is already in progress, suspend this request into the holding queue
-        return new Promise((resolve, reject) => {
-          subscribeTokenRefresh((tokenOrError) => {
-            if (typeof tokenOrError === 'string') {
-               originalRequest.headers.Authorization = `Bearer ${tokenOrError}`;
-               resolve(api(originalRequest));
-            } else {
-               // Reject hanging requests
-               reject(tokenOrError); 
-            }
-          });
-        });
       }
+
+      return new Promise((resolve, reject) => {
+        subscribeTokenRefresh((tokenOrError) => {
+          if (typeof tokenOrError === 'string') {
+            originalRequest.headers.Authorization = `Bearer ${tokenOrError}`;
+            resolve(api(originalRequest));
+          } else {
+            reject(tokenOrError);
+          }
+        });
+      });
     }
 
     return Promise.reject(error);
