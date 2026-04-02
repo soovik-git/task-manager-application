@@ -12,7 +12,7 @@ router.post('/login', authLimiter, validateData(authSchema.login), AuthControlle
 router.get('/refresh', AuthController.refresh);
 
 // Protected routes
-router.post('/logout', authMiddleware.protect, AuthController.logout); // POST — state-changing action
+router.post('/logout', AuthController.logout); // No protect — must work with expired access token
 router.get('/me', authMiddleware.protect, AuthController.getMe);
 
 export default router;

@@ -116,6 +116,37 @@ form {
   gap: 1rem;
 }
 
+.password-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+  transition: color 0.2s ease;
+  z-index: 10;
+}
+
+.password-toggle:hover {
+  color: var(--color-text-primary);
+  background: none;
+  transform: translateY(-50%) scale(1.1);
+}
+
+.password-wrapper input {
+  padding-right: 45px;
+}
+
 .error-msg {
   color: var(--color-danger);
   font-size: 0.875rem;

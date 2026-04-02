@@ -70,14 +70,22 @@ api.interceptors.response.use(
           
           return api(originalRequest);
         } catch (refreshError) {
-          // If refresh completely fails, clear everything and reject all queued requests
+          // WHY CLEAR THE QUEUE BEFORE REDIRECTING?
+          // If we redirect while subscribers are still waiting on a Promise,
+          // those Promises never resolve or reject — the callbacks hang in memory
+          // and the app visually freezes (spinners stuck, buttons unresponsive).
+          // Rejecting all queued requests FIRST ensures every caller gets a clean
+          // rejection it can handle, then we navigate away safely.
           setAccessToken(null);
           localStorage.removeItem('isLoggedIn');
-          localStorage.removeItem('user'); // ← Critical: prevents stale user causing reload flicker
-          
-          onRefreshFailed(refreshError);
-          refreshSubscribers = [];
-          
+          localStorage.removeItem('user');
+
+          onRefreshFailed(refreshError); // Reject all queued requests
+          refreshSubscribers = [];       // Clear the queue
+
+          // Hard redirect to login — session is unrecoverable at this point
+          window.location.href = '/login';
+
           return Promise.reject(refreshError);
         } finally {
           isRefreshing = false;
